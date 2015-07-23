@@ -7,16 +7,15 @@ package changerings;
 
 //COMMENTS IN CAPS ARE MINE
 
+import SimpleOpenNI.SimpleOpenNI;
 import processing.core.PApplet;
+import processing.core.PMatrix3D;
+import processing.core.PVector;
 import processing.opengl.*;
 import ddf.minim.*;
 import ddf.minim.analysis.*;
 
 public class Visualization_02_mouse_follow extends PApplet {
-
-	public boolean sketchFullScreen() {
-		return true;
-	}
 
 	Minim minim;
 	AudioPlayer song;
@@ -27,28 +26,45 @@ public class Visualization_02_mouse_follow extends PApplet {
 	int RASTRO = 10;
 	float[] bands;
 	int v;
+	
+	// Kinect and variables
+	SimpleOpenNI kinect;
+    float zoomF = 0.85f; //how big the skeleton appears in the frame
+    float rotX = radians(180); // by default rotate the hole scene 180deg around
+                               // the x-axis,
+                               // the data from openni comes upside down
+    float rotY = radians(0);
+    boolean autoCalib = true;
+
+    PVector bodyCenter = new PVector();
+    PVector bodyDir = new PVector();
+    PVector com = new PVector();
+    PVector com2d = new PVector();
+    int[] userClr = new int[] { color(255, 0, 0), color(0, 255, 0), color(0, 0, 255), color(255, 255, 0),
+            color(255, 0, 255), color(0, 255, 255) };
+
+
+	public boolean sketchFullScreen() {
+		return true;
+	}
 
 	// ...............................................................
 	// SETUP..............
 
 	public void setup() {
 		// strokeWeight(0);
-		size(displayWidth, displayHeight, P2D);
+		size(displayWidth, displayHeight, P3D);
 		// size(900, 900, P2D); //(700, 800, P2D);
+		boolean kinectAttached = setupKinect(this);
+
 		minim = new Minim(this);
 
-		// song = minim.loadFile("sabre_dance.mp3", 2048); // VARIOUS MUSIC
-		// SELECTIONS
-		// song = minim.loadFile("sabre_dance_slow.mp3", 2048);
-		song = minim.loadFile("5040gr15b.mp3", 2048); // MY OTHER FAVORITE
-		// song = minim.loadFile("5184lo08a.mp3", 2048);
+		loadAudioFile();
 
-		// song = minim.loadFile("12345st11c.mp3", 2048); // NEW FAVORITE
-		// song = minim.loadFile("5080lo10a.mp3", 2048); // MY FAVORITE
-		// song = minim.loadFile("5080lo10a_slow.mp3", 2048);
 		/*
 		 * if (mousePressed) { song.loop(); }
 		 */
+		
 		// colorMode(HSB); THIS COLOR MODE DRIVES ME CRAZY -- I SHOULD LEARN
 		// THIS....
 		ellipseMode(CENTER);
@@ -68,12 +84,118 @@ public class Visualization_02_mouse_follow extends PApplet {
 		 * float[peaksize]; peak_age = new int[peaksize];
 		 */
 		frameRate(30);
+		
+        smooth();
+        perspective(radians(45), width / height, 10, 150000);
 	}
+	
+	private void loadAudioFile() {
+		// song = minim.loadFile("sabre_dance.mp3", 2048); // VARIOUS MUSIC
+		// SELECTIONS
+		// song = minim.loadFile("sabre_dance_slow.mp3", 2048);
+		song = minim.loadFile("5040gr15b.mp3", 2048); // MY OTHER FAVORITE
+		// song = minim.loadFile("5184lo08a.mp3", 2048);
+
+		// song = minim.loadFile("12345st11c.mp3", 2048); // NEW FAVORITE
+		// song = minim.loadFile("5080lo10a.mp3", 2048); // MY FAVORITE
+		// song = minim.loadFile("5080lo10a_slow.mp3", 2048);
+	}
+	
+
+	/**
+	 * Set up the Kinect and ensure connectivity
+	 * @param pApplet
+	 * @return true if set up successful, false otherwise
+	 */
+    private boolean setupKinect(PApplet pApplet) {
+    	
+    	println("Setting up Kinect...");
+    	
+        kinect = new SimpleOpenNI(this);
+        if (kinect.isInit() == false) {
+            println("Can't init SimpleOpenNI, maybe the camera is not connected!");
+            return false;
+        }
+
+        // disable mirror
+        kinect.setMirror(false);
+
+        // enable depthMap generation
+        kinect.enableDepth();
+
+        // enable skeleton generation for all joints
+        kinect.enableUser();
+    	
+        return true;
+    }
+
 
 	// //////////////////////////////////////////////////////DRAW LOOP
 	// ///////////////////
 
 	public void draw() {
+        background(0, 0, 0);
+        
+        pushMatrix(); // save off 3d frame of reference before painting 2d
+        hint(DISABLE_DEPTH_TEST);  // switch off Z (depth) axis
+
+		drawMusic();
+		
+		hint(ENABLE_DEPTH_TEST);  // restore Z (depth) axis
+		popMatrix(); // restore 3d frame of reference
+		
+        // update the cam
+		if(kinect != null) {
+			kinect.update();
+		}
+
+        position3dAndScale();
+		
+        drawSkeletons();
+
+
+	}
+
+	void position3dAndScale() {
+		// set the scene pos
+        translate(width / 2, height / 2, 0);
+        rotateX(rotX);
+        rotateY(rotY);
+        scale(zoomF);
+
+        translate(0, 0, -1000); // set the rotation center of the scene 1000
+                                // infront of the camera
+	}
+
+	void drawSkeletons() {
+		// draw the skeleton if it's available
+        int[] userList = kinect.getUsers();
+        for (int i = 0; i < userList.length; i++) {
+            if (kinect.isTrackingSkeleton(userList[i]))
+                drawSkeleton(userList[i]);
+
+            // draw the center of mass
+            if (kinect.getCoM(userList[i], com)) {
+                stroke(100, 255, 0);
+                strokeWeight(1);
+                beginShape(LINES);
+                vertex(com.x - 15, com.y, com.z);
+                vertex(com.x + 15, com.y, com.z);
+
+                vertex(com.x, com.y - 15, com.z);
+                vertex(com.x, com.y + 15, com.z);
+
+                vertex(com.x, com.y, com.z - 15);
+                vertex(com.x, com.y, com.z + 15);
+                endShape();
+
+                fill(0, 255, 100);
+                text(Integer.toString(userList[i]), com.x, com.y, com.z);
+            }
+        }
+	}
+
+	void drawMusic() {
 		// .......................................................................................
 
 		noStroke(); // FADE BACKGROUND
@@ -85,6 +207,7 @@ public class Visualization_02_mouse_follow extends PApplet {
 		if (mousePressed) {
 			song.loop();
 		}
+		
 		c1 = color(random(255), random(129), random(247));
 		// .......................................................................................
 
@@ -172,9 +295,117 @@ public class Visualization_02_mouse_follow extends PApplet {
 																		// band_m5*250);
 			rectMode(CORNER);
 		}
-
 	}
 
+    // draw the skeleton with the selected joints
+    public void drawSkeleton(int userId) {
+        strokeWeight(3);
+
+        // to get the 3d joint data
+        drawLimb(userId, SimpleOpenNI.SKEL_HEAD, SimpleOpenNI.SKEL_NECK);
+
+        drawLimb(userId, SimpleOpenNI.SKEL_NECK, SimpleOpenNI.SKEL_LEFT_SHOULDER);
+        drawLimb(userId, SimpleOpenNI.SKEL_LEFT_SHOULDER, SimpleOpenNI.SKEL_LEFT_ELBOW);
+        drawLimb(userId, SimpleOpenNI.SKEL_LEFT_ELBOW, SimpleOpenNI.SKEL_LEFT_HAND);
+
+        drawLimb(userId, SimpleOpenNI.SKEL_NECK, SimpleOpenNI.SKEL_RIGHT_SHOULDER);
+        drawLimb(userId, SimpleOpenNI.SKEL_RIGHT_SHOULDER, SimpleOpenNI.SKEL_RIGHT_ELBOW);
+        drawLimb(userId, SimpleOpenNI.SKEL_RIGHT_ELBOW, SimpleOpenNI.SKEL_RIGHT_HAND);
+
+        drawLimb(userId, SimpleOpenNI.SKEL_LEFT_SHOULDER, SimpleOpenNI.SKEL_TORSO);
+        drawLimb(userId, SimpleOpenNI.SKEL_RIGHT_SHOULDER, SimpleOpenNI.SKEL_TORSO);
+
+        drawLimb(userId, SimpleOpenNI.SKEL_TORSO, SimpleOpenNI.SKEL_LEFT_HIP);
+        drawLimb(userId, SimpleOpenNI.SKEL_LEFT_HIP, SimpleOpenNI.SKEL_LEFT_KNEE);
+        drawLimb(userId, SimpleOpenNI.SKEL_LEFT_KNEE, SimpleOpenNI.SKEL_LEFT_FOOT);
+
+        drawLimb(userId, SimpleOpenNI.SKEL_TORSO, SimpleOpenNI.SKEL_RIGHT_HIP);
+        drawLimb(userId, SimpleOpenNI.SKEL_RIGHT_HIP, SimpleOpenNI.SKEL_RIGHT_KNEE);
+        drawLimb(userId, SimpleOpenNI.SKEL_RIGHT_KNEE, SimpleOpenNI.SKEL_RIGHT_FOOT);
+
+        // draw body direction
+        getBodyDirection(userId, bodyCenter, bodyDir);
+
+        bodyDir.mult(200); // 200mm length
+        bodyDir.add(bodyCenter);
+
+        stroke(255, 200, 200);
+        line(bodyCenter.x, bodyCenter.y, bodyCenter.z, bodyDir.x, bodyDir.y, bodyDir.z);
+
+        strokeWeight(1);
+
+    }
+    
+    public void drawLimb(int userId, int jointType1, int jointType2) {
+        PVector jointPos1 = new PVector();
+        PVector jointPos2 = new PVector();
+        float confidence;
+
+        // draw the joint position
+        confidence = kinect.getJointPositionSkeleton(userId, jointType1, jointPos1);
+        confidence = kinect.getJointPositionSkeleton(userId, jointType2, jointPos2);
+
+        stroke(255, 0, 0, confidence * 200 + 55);
+        line(jointPos1.x, jointPos1.y, jointPos1.z, jointPos2.x, jointPos2.y, jointPos2.z);
+
+        drawJointOrientation(userId, jointType1, jointPos1, 50);
+    }
+
+    public void drawJointOrientation(int userId, int jointType, PVector pos, float length) {
+        // draw the joint orientation
+        PMatrix3D orientation = new PMatrix3D();
+        float confidence = kinect.getJointOrientationSkeleton(userId, jointType, orientation);
+        if (confidence < 0.001f)
+            // nothing to draw, orientation data is useless
+            return;
+
+        pushMatrix();
+        translate(pos.x, pos.y, pos.z);
+
+        // set the local coordsys
+        applyMatrix(orientation);
+
+        // coordsys lines are 100mm long
+        // x - r
+        stroke(255, 0, 0, confidence * 200 + 55);
+        line(0, 0, 0, length, 0, 0);
+        // y - g
+        stroke(0, 255, 0, confidence * 200 + 55);
+        line(0, 0, 0, 0, length, 0);
+        // z - b
+        stroke(0, 0, 255, confidence * 200 + 55);
+        line(0, 0, 0, 0, 0, length);
+        popMatrix();
+    }
+    
+    public void getBodyDirection(int userId, PVector centerPoint, PVector dir) {
+        PVector jointL = new PVector();
+        PVector jointH = new PVector();
+        PVector jointR = new PVector();
+        float confidence;
+
+        // draw the joint position
+        confidence = kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_LEFT_SHOULDER, jointL);
+        confidence = kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_HEAD, jointH);
+        confidence = kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_RIGHT_SHOULDER, jointR);
+
+        // take the neck as the center point
+        confidence = kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_NECK, centerPoint);
+
+        /*
+         * // manually calc the centerPoint PVector shoulderDist =
+         * PVector.sub(jointL,jointR);
+         * centerPoint.set(PVector.mult(shoulderDist,.5));
+         * centerPoint.add(jointR);
+         */
+
+        PVector up = PVector.sub(jointH, centerPoint);
+        PVector left = PVector.sub(jointR, centerPoint);
+
+        dir.set(up.cross(left));
+        dir.normalize();
+    }
+	
 	void spiral(float segments, float N_voltas, int raio_max) {
 		int t, raio;
 		float cx, cy, px0 = 0, py0 = 0, px1 = 0, py1 = 0;
@@ -200,6 +431,25 @@ public class Visualization_02_mouse_follow extends PApplet {
 
 		super.stop();
 	}
+	
+    // -----------------------------------------------------------------
+    // SimpleOpenNI user events
+
+    public void onNewUser(SimpleOpenNI curContext, int userId) {
+        println("onNewUser - userId: " + userId);
+        println("\tstart tracking skeleton");
+
+        kinect.startTrackingSkeleton(userId);
+    }
+
+    public void onLostUser(SimpleOpenNI curContext, int userId) {
+        println("onLostUser - userId: " + userId);
+    }
+
+    public void onVisibleUser(SimpleOpenNI curContext, int userId) {
+        // println("onVisibleUser - userId: " + userId);
+    }
+	
 
 	public void keyPressed() {
 		exit();
