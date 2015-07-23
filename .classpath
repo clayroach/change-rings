@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <classpath>
-        <classpathentry kind="src" path="src"/>
-        <classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
-        <classpathentry kind="output" path="bin"/>
+	<classpathentry kind="src" path="src"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
 	<classpathentry kind="lib" path="lib/base/minim/jl1.0.jar">
 		<attributes>
 			<attribute name="org.eclipse.jdt.launching.CLASSPATH_ATTR_LIBRARY_PATH_ENTRY" value="ChangeRings/lib/base/minim"/>
@@ -35,6 +34,7 @@
 	</classpathentry>
 	<classpathentry kind="lib" path="lib/base/core/core.jar">
 		<attributes>
+			<attribute name="javadoc_location" value="http://processing.org/reference/javadoc/core/"/>
 			<attribute name="org.eclipse.jdt.launching.CLASSPATH_ATTR_LIBRARY_PATH_ENTRY" value="ChangeRings/lib/base/core"/>
 		</attributes>
 	</classpathentry>
@@ -108,4 +108,11 @@
 			<attribute name="org.eclipse.jdt.launching.CLASSPATH_ATTR_LIBRARY_PATH_ENTRY" value="ChangeRings/lib/base/core"/>
 		</attributes>
 	</classpathentry>
+	<classpathentry kind="lib" path="/Users/croach/Documents/Processing/libraries/SimpleOpenNI/library/SimpleOpenNI.jar">
+		<attributes>
+			<attribute name="javadoc_location" value="file:/Users/croach/Documents/Processing/libraries/SimpleOpenNI/documentation/"/>
+			<attribute name="org.eclipse.jdt.launching.CLASSPATH_ATTR_LIBRARY_PATH_ENTRY" value="/Users/croach/Documents/Processing/libraries/SimpleOpenNI/library"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="output" path="bin"/>
 </classpath>
