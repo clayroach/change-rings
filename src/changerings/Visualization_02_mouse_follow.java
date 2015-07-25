@@ -7,13 +7,22 @@ package changerings;
 
 //COMMENTS IN CAPS ARE MINE
 
-import SimpleOpenNI.SimpleOpenNI;
+import java.awt.AWTException;
+import java.awt.Robot;
+
 import processing.core.PApplet;
+import processing.core.PImage;
 import processing.core.PMatrix3D;
 import processing.core.PVector;
-import processing.opengl.*;
-import ddf.minim.*;
-import ddf.minim.analysis.*;
+
+import SimpleOpenNI.SimpleOpenNI;
+
+import ddf.minim.AudioInput;
+import ddf.minim.AudioPlayer;
+import ddf.minim.Minim;
+import ddf.minim.analysis.FFT;
+
+// Sounds processing
 
 public class Visualization_02_mouse_follow extends PApplet {
 
@@ -26,23 +35,28 @@ public class Visualization_02_mouse_follow extends PApplet {
 	int RASTRO = 10;
 	float[] bands;
 	int v;
-	
+
 	// Kinect and variables
 	SimpleOpenNI kinect;
-    float zoomF = 0.85f; //how big the skeleton appears in the frame
-    float rotX = radians(180); // by default rotate the hole scene 180deg around
-                               // the x-axis,
-                               // the data from openni comes upside down
-    float rotY = radians(0);
-    boolean autoCalib = true;
+	float zoomF = 0.85f; // how big the skeleton appears in the frame
+	float rotX = radians(180); // by default rotate the hole scene 180deg around
+								// the x-axis,
+								// the data from openni comes upside down
+	float rotY = radians(0);
+	boolean autoCalib = true;
 
-    PVector bodyCenter = new PVector();
-    PVector bodyDir = new PVector();
-    PVector com = new PVector();
-    PVector com2d = new PVector();
-    int[] userClr = new int[] { color(255, 0, 0), color(0, 255, 0), color(0, 0, 255), color(255, 255, 0),
-            color(255, 0, 255), color(0, 255, 255) };
+	PVector bodyCenter = new PVector();
+	PVector bodyDir = new PVector();
+	PVector com = new PVector();
+	PVector com2d = new PVector();
+	int[] userClr = new int[] { color(255, 0, 0), color(0, 255, 0), color(0, 0, 255), color(255, 255, 0),
+			color(255, 0, 255), color(0, 255, 255) };
 
+	// Hand image
+	PImage handImage;
+
+	// Robot class used to move mouse around
+	Robot robot = null;
 
 	public boolean sketchFullScreen() {
 		return true;
@@ -54,6 +68,15 @@ public class Visualization_02_mouse_follow extends PApplet {
 	public void setup() {
 		// strokeWeight(0);
 		size(displayWidth, displayHeight, P3D);
+		//size(900, 900, P3D);
+
+		try {
+			robot = new Robot();
+		} catch (AWTException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
 		// size(900, 900, P2D); //(700, 800, P2D);
 		boolean kinectAttached = setupKinect(this);
 
@@ -61,10 +84,15 @@ public class Visualization_02_mouse_follow extends PApplet {
 
 		loadAudioFile();
 
+		handImage = loadImage("Hand.png");
+		if (handImage == null) {
+			println("unable to load image");
+		}
+
 		/*
 		 * if (mousePressed) { song.loop(); }
 		 */
-		
+
 		// colorMode(HSB); THIS COLOR MODE DRIVES ME CRAZY -- I SHOULD LEARN
 		// THIS....
 		ellipseMode(CENTER);
@@ -84,11 +112,11 @@ public class Visualization_02_mouse_follow extends PApplet {
 		 * float[peaksize]; peak_age = new int[peaksize];
 		 */
 		frameRate(30);
-		
-        smooth();
-        perspective(radians(45), width / height, 10, 150000);
+
+		smooth();
+		perspective(radians(45), width / height, 10, 150000);
 	}
-	
+
 	private void loadAudioFile() {
 		// song = minim.loadFile("sabre_dance.mp3", 2048); // VARIOUS MUSIC
 		// SELECTIONS
@@ -100,99 +128,184 @@ public class Visualization_02_mouse_follow extends PApplet {
 		// song = minim.loadFile("5080lo10a.mp3", 2048); // MY FAVORITE
 		// song = minim.loadFile("5080lo10a_slow.mp3", 2048);
 	}
-	
 
 	/**
 	 * Set up the Kinect and ensure connectivity
+	 * 
 	 * @param pApplet
 	 * @return true if set up successful, false otherwise
 	 */
-    private boolean setupKinect(PApplet pApplet) {
-    	
-    	println("Setting up Kinect...");
-    	
-        kinect = new SimpleOpenNI(this);
-        if (kinect.isInit() == false) {
-            println("Can't init SimpleOpenNI, maybe the camera is not connected!");
-            return false;
-        }
+	private boolean setupKinect(PApplet pApplet) {
 
-        // disable mirror
-        kinect.setMirror(false);
+		println("Setting up Kinect...");
 
-        // enable depthMap generation
-        kinect.enableDepth();
-
-        // enable skeleton generation for all joints
-        kinect.enableUser();
-    	
-        return true;
-    }
-
-
-	// //////////////////////////////////////////////////////DRAW LOOP
-	// ///////////////////
-
-	public void draw() {
-        background(0, 0, 0);
-        
-        pushMatrix(); // save off 3d frame of reference before painting 2d
-        hint(DISABLE_DEPTH_TEST);  // switch off Z (depth) axis
-
-		drawMusic();
-		
-		hint(ENABLE_DEPTH_TEST);  // restore Z (depth) axis
-		popMatrix(); // restore 3d frame of reference
-		
-        // update the cam
-		if(kinect != null) {
-			kinect.update();
+		kinect = new SimpleOpenNI(this, SimpleOpenNI.RUN_MODE_MULTI_THREADED);
+		if (kinect.isInit() == false) {
+			println("Can't init SimpleOpenNI, maybe the camera is not connected!");
+			return false;
 		}
 
-        position3dAndScale();
-		
-        drawSkeletons();
+		// disable mirror
+		kinect.setMirror(false);
 
+		// enable depthMap generation
+		kinect.enableDepth();
 
+		// enable skeleton generation for all joints
+		kinect.enableUser();
+
+//		kinect.enableRGB();
+
+		return true;
+	}
+
+	// //////////////////////////////////////////////////////DRAW LOOP
+	// /////////////////// // END DRAW LOOP
+
+	public void draw() {
+		background(0, 0, 0);
+
+		pushMatrix(); // save off 3d frame of reference before painting 2d
+		hint(DISABLE_DEPTH_TEST); // switch off Z (depth) axis
+
+		drawMusic();
+
+		hint(ENABLE_DEPTH_TEST); // restore Z (depth) axis
+		popMatrix(); // restore 3d frame of reference
+
+		// update the cam
+		if (kinect != null) {
+			
+			kinect.update();
+			
+			int[] userList = kinect.getUsers();
+
+			position3dAndScale();
+			
+			drawPointCloud();
+
+			drawSkeletons(userList);
+			
+			moveMouse(userList);
+			
+		}
+
+	}
+	
+
+	float getJointAngle(int userId, int jointID1, int jointID2) {
+		PVector joint1 = new PVector();
+		PVector joint2 = new PVector();
+		kinect.getJointPositionSkeleton(userId, jointID1, joint1);
+		kinect.getJointPositionSkeleton(userId, jointID2, joint2);
+		return atan2(joint1.y - joint2.y, joint1.x - joint2.x);
 	}
 
 	void position3dAndScale() {
 		// set the scene pos
-        translate(width / 2, height / 2, 0);
-        rotateX(rotX);
-        rotateY(rotY);
-        scale(zoomF);
+		translate(width / 2, height / 2, 0);
+		rotateX(rotX);
+		rotateY(rotY);
+		scale(zoomF);
 
-        translate(0, 0, -1000); // set the rotation center of the scene 1000
-                                // infront of the camera
+		translate(0, 0, -1000); // set the rotation center of the scene 1000
+								// infront of the camera
+	}
+	
+	void drawPointCloud() {
+		  // draw the 3d point depth map
+		  int[]   depthMap = kinect.depthMap();
+		  int     steps   = 10;  // to speed up the drawing, draw every third point
+		  int     index;
+		  PVector realWorldPoint;
+
+		  // draw point cloud
+		  stroke(200); 
+		  beginShape(POINTS);
+		  for(int y=0;y < kinect.depthHeight();y+=steps)
+		  {
+		    for(int x=0;x < kinect.depthWidth();x+=steps)
+		    {
+		      index = x + y * kinect.depthWidth();
+		      if(depthMap[index] > 0)
+		      { 
+		        // draw the projected point
+		        realWorldPoint = kinect.depthMapRealWorld()[index];
+		        vertex(realWorldPoint.x,realWorldPoint.y,realWorldPoint.z); 
+		      }
+		    } 
+		  } 
+		  endShape();
+
 	}
 
-	void drawSkeletons() {
+	void drawSkeletons(int[] userList) {
 		// draw the skeleton if it's available
-        int[] userList = kinect.getUsers();
-        for (int i = 0; i < userList.length; i++) {
-            if (kinect.isTrackingSkeleton(userList[i]))
-                drawSkeleton(userList[i]);
 
-            // draw the center of mass
-            if (kinect.getCoM(userList[i], com)) {
-                stroke(100, 255, 0);
-                strokeWeight(1);
-                beginShape(LINES);
-                vertex(com.x - 15, com.y, com.z);
-                vertex(com.x + 15, com.y, com.z);
+		for (int i = 0; i < userList.length; i++) {
+			if (kinect.isTrackingSkeleton(userList[i]))
+				drawSkeleton(userList[i]);
 
-                vertex(com.x, com.y - 15, com.z);
-                vertex(com.x, com.y + 15, com.z);
+			// draw the center of mass
+			if (kinect.getCoM(userList[i], com)) {
+				stroke(100, 255, 0);
+				strokeWeight(1);
+				beginShape(LINES);
+				vertex(com.x - 15, com.y, com.z);
+				vertex(com.x + 15, com.y, com.z);
 
-                vertex(com.x, com.y, com.z - 15);
-                vertex(com.x, com.y, com.z + 15);
-                endShape();
+				vertex(com.x, com.y - 15, com.z);
+				vertex(com.x, com.y + 15, com.z);
 
-                fill(0, 255, 100);
-                text(Integer.toString(userList[i]), com.x, com.y, com.z);
-            }
-        }
+				vertex(com.x, com.y, com.z - 15);
+				vertex(com.x, com.y, com.z + 15);
+				endShape();
+
+				fill(0, 255, 100);
+				text(Integer.toString(userList[i]), com.x, com.y, com.z);
+								
+			}
+		}
+	}
+
+	void moveMouse(int[] userList) {
+//		PVector jointPosition = new PVector();
+//		float confidence = 0;
+		
+		if(robot == null) {
+			println("Robot class not initialized.  Unable to move mouse");
+			return;
+		}
+
+		if (userList.length > 0) {
+			// get first user
+		    PVector handPos = new PVector();
+		    kinect.getJointPositionSkeleton(userList[0], SimpleOpenNI.SKEL_LEFT_HAND, handPos);
+		    PVector convertedHandPos = new PVector();
+		    kinect.convertRealWorldToProjective(handPos, convertedHandPos);
+		    
+//		    println("x: " + handPos.x + " y: " + handPos.y);
+		    
+		    kinect.getCoM(userList[0], com);
+		    // doesn't work yet.
+//		    robot.mouseMove(Math.round(handPos.x), Math.round(handPos.y));
+			pushMatrix();
+			translate(handPos.x, handPos.y, handPos.z);
+//			translate(convertedHandPos.x, convertedHandPos.y, 1000);
+			rotateX(rotX);
+//			translate(convertedHandPos.x,convertedHandPos.y,convertedHandPos.z);
+		    fill(255,255,0);
+			ellipse(0, 0, 50, 50);
+
+			
+			fill(153);
+			textSize(32);
+//			text("X: " + handPos.x + "Y: " + handPos.y + "Z: " + handPos.z,0,0,0);
+			
+			popMatrix();
+
+		}
+
 	}
 
 	void drawMusic() {
@@ -207,7 +320,7 @@ public class Visualization_02_mouse_follow extends PApplet {
 		if (mousePressed) {
 			song.loop();
 		}
-		
+
 		c1 = color(random(255), random(129), random(247));
 		// .......................................................................................
 
@@ -220,8 +333,7 @@ public class Visualization_02_mouse_follow extends PApplet {
 		fft.forward(song.mix);
 		// fft.forward(in.mix);
 		for (int i = 0; i < fft.specSize() / 2; i++) {
-			bands[i / ((fft.specSize() / 2) / (bands.length - 1))] += fft
-					.getBand(i);
+			bands[i / ((fft.specSize() / 2) / (bands.length - 1))] += fft.getBand(i);
 		}
 		// float total = 0.0; WHY IS THIS HERE??????? (IN THE ORIGINAL) DOING
 		// NOTHING??
@@ -250,8 +362,7 @@ public class Visualization_02_mouse_follow extends PApplet {
 			stroke(255, 197, 80); // , 125);
 			noFill();
 			rotate(PI / random(5));
-			triangle(-10 * bands[1], -10 * bands[1], mouseX, 10 * bands[1],
-					10 * bands[1], -10 * bands[1]);
+			triangle(-10 * bands[1], -10 * bands[1], mouseX, 10 * bands[1], 10 * bands[1], -10 * bands[1]);
 			// triangle(random(-width/2, width/2), random(-height/2, height/2),
 			// band_m1*28, band_m1*28,10*bands[1], -10*bands[1]);
 		}
@@ -277,10 +388,12 @@ public class Visualization_02_mouse_follow extends PApplet {
 			stroke(255, 0, 0);
 			fill(c1); // 255, 129, 247, 180); // ROSE-COLORED SQUARES //
 						// (255*band_m4, 255, 255, 200);
-			rect(random(width / 2), random(height / 2), band_m4 * 280,
-					band_m4 * 280); // random(-width/2, width/2),
-									// random(-height/2, height/2), band_m4*280,
-									// band_m4*280);
+			rect(random(width / 2), random(height / 2), band_m4 * 280, band_m4 * 280); // random(-width/2,
+																						// width/2),
+																						// random(-height/2,
+																						// height/2),
+																						// band_m4*280,
+																						// band_m4*280);
 		}
 		if (bands[5] > 0.5) {
 			rectMode(CENTER);
@@ -297,115 +410,115 @@ public class Visualization_02_mouse_follow extends PApplet {
 		}
 	}
 
-    // draw the skeleton with the selected joints
-    public void drawSkeleton(int userId) {
-        strokeWeight(3);
+	// draw the skeleton with the selected joints
+	public void drawSkeleton(int userId) {
+		strokeWeight(3);
 
-        // to get the 3d joint data
-        drawLimb(userId, SimpleOpenNI.SKEL_HEAD, SimpleOpenNI.SKEL_NECK);
+		// to get the 3d joint data
+		drawLimb(userId, SimpleOpenNI.SKEL_HEAD, SimpleOpenNI.SKEL_NECK);
 
-        drawLimb(userId, SimpleOpenNI.SKEL_NECK, SimpleOpenNI.SKEL_LEFT_SHOULDER);
-        drawLimb(userId, SimpleOpenNI.SKEL_LEFT_SHOULDER, SimpleOpenNI.SKEL_LEFT_ELBOW);
-        drawLimb(userId, SimpleOpenNI.SKEL_LEFT_ELBOW, SimpleOpenNI.SKEL_LEFT_HAND);
+		drawLimb(userId, SimpleOpenNI.SKEL_NECK, SimpleOpenNI.SKEL_LEFT_SHOULDER);
+		drawLimb(userId, SimpleOpenNI.SKEL_LEFT_SHOULDER, SimpleOpenNI.SKEL_LEFT_ELBOW);
+		drawLimb(userId, SimpleOpenNI.SKEL_LEFT_ELBOW, SimpleOpenNI.SKEL_LEFT_HAND);
 
-        drawLimb(userId, SimpleOpenNI.SKEL_NECK, SimpleOpenNI.SKEL_RIGHT_SHOULDER);
-        drawLimb(userId, SimpleOpenNI.SKEL_RIGHT_SHOULDER, SimpleOpenNI.SKEL_RIGHT_ELBOW);
-        drawLimb(userId, SimpleOpenNI.SKEL_RIGHT_ELBOW, SimpleOpenNI.SKEL_RIGHT_HAND);
+		drawLimb(userId, SimpleOpenNI.SKEL_NECK, SimpleOpenNI.SKEL_RIGHT_SHOULDER);
+		drawLimb(userId, SimpleOpenNI.SKEL_RIGHT_SHOULDER, SimpleOpenNI.SKEL_RIGHT_ELBOW);
+		drawLimb(userId, SimpleOpenNI.SKEL_RIGHT_ELBOW, SimpleOpenNI.SKEL_RIGHT_HAND);
 
-        drawLimb(userId, SimpleOpenNI.SKEL_LEFT_SHOULDER, SimpleOpenNI.SKEL_TORSO);
-        drawLimb(userId, SimpleOpenNI.SKEL_RIGHT_SHOULDER, SimpleOpenNI.SKEL_TORSO);
+		drawLimb(userId, SimpleOpenNI.SKEL_LEFT_SHOULDER, SimpleOpenNI.SKEL_TORSO);
+		drawLimb(userId, SimpleOpenNI.SKEL_RIGHT_SHOULDER, SimpleOpenNI.SKEL_TORSO);
 
-        drawLimb(userId, SimpleOpenNI.SKEL_TORSO, SimpleOpenNI.SKEL_LEFT_HIP);
-        drawLimb(userId, SimpleOpenNI.SKEL_LEFT_HIP, SimpleOpenNI.SKEL_LEFT_KNEE);
-        drawLimb(userId, SimpleOpenNI.SKEL_LEFT_KNEE, SimpleOpenNI.SKEL_LEFT_FOOT);
+		drawLimb(userId, SimpleOpenNI.SKEL_TORSO, SimpleOpenNI.SKEL_LEFT_HIP);
+		drawLimb(userId, SimpleOpenNI.SKEL_LEFT_HIP, SimpleOpenNI.SKEL_LEFT_KNEE);
+		drawLimb(userId, SimpleOpenNI.SKEL_LEFT_KNEE, SimpleOpenNI.SKEL_LEFT_FOOT);
 
-        drawLimb(userId, SimpleOpenNI.SKEL_TORSO, SimpleOpenNI.SKEL_RIGHT_HIP);
-        drawLimb(userId, SimpleOpenNI.SKEL_RIGHT_HIP, SimpleOpenNI.SKEL_RIGHT_KNEE);
-        drawLimb(userId, SimpleOpenNI.SKEL_RIGHT_KNEE, SimpleOpenNI.SKEL_RIGHT_FOOT);
+		drawLimb(userId, SimpleOpenNI.SKEL_TORSO, SimpleOpenNI.SKEL_RIGHT_HIP);
+		drawLimb(userId, SimpleOpenNI.SKEL_RIGHT_HIP, SimpleOpenNI.SKEL_RIGHT_KNEE);
+		drawLimb(userId, SimpleOpenNI.SKEL_RIGHT_KNEE, SimpleOpenNI.SKEL_RIGHT_FOOT);
 
-        // draw body direction
-        getBodyDirection(userId, bodyCenter, bodyDir);
+		// draw body direction
+		getBodyDirection(userId, bodyCenter, bodyDir);
 
-        bodyDir.mult(200); // 200mm length
-        bodyDir.add(bodyCenter);
+		bodyDir.mult(200); // 200mm length
+		bodyDir.add(bodyCenter);
 
-        stroke(255, 200, 200);
-        line(bodyCenter.x, bodyCenter.y, bodyCenter.z, bodyDir.x, bodyDir.y, bodyDir.z);
+		stroke(255, 200, 200);
+		line(bodyCenter.x, bodyCenter.y, bodyCenter.z, bodyDir.x, bodyDir.y, bodyDir.z);
 
-        strokeWeight(1);
+		strokeWeight(1);
 
-    }
-    
-    public void drawLimb(int userId, int jointType1, int jointType2) {
-        PVector jointPos1 = new PVector();
-        PVector jointPos2 = new PVector();
-        float confidence;
+	}
 
-        // draw the joint position
-        confidence = kinect.getJointPositionSkeleton(userId, jointType1, jointPos1);
-        confidence = kinect.getJointPositionSkeleton(userId, jointType2, jointPos2);
+	public void drawLimb(int userId, int jointType1, int jointType2) {
+		PVector jointPos1 = new PVector();
+		PVector jointPos2 = new PVector();
+		float confidence;
 
-        stroke(255, 0, 0, confidence * 200 + 55);
-        line(jointPos1.x, jointPos1.y, jointPos1.z, jointPos2.x, jointPos2.y, jointPos2.z);
+		// draw the joint position
+		confidence = kinect.getJointPositionSkeleton(userId, jointType1, jointPos1);
+		confidence = kinect.getJointPositionSkeleton(userId, jointType2, jointPos2);
 
-        drawJointOrientation(userId, jointType1, jointPos1, 50);
-    }
+		stroke(255, 0, 0, confidence * 200 + 55);
+		line(jointPos1.x, jointPos1.y, jointPos1.z, jointPos2.x, jointPos2.y, jointPos2.z);
 
-    public void drawJointOrientation(int userId, int jointType, PVector pos, float length) {
-        // draw the joint orientation
-        PMatrix3D orientation = new PMatrix3D();
-        float confidence = kinect.getJointOrientationSkeleton(userId, jointType, orientation);
-        if (confidence < 0.001f)
-            // nothing to draw, orientation data is useless
-            return;
+		drawJointOrientation(userId, jointType1, jointPos1, 50);
+	}
 
-        pushMatrix();
-        translate(pos.x, pos.y, pos.z);
+	public void drawJointOrientation(int userId, int jointType, PVector pos, float length) {
+		// draw the joint orientation
+		PMatrix3D orientation = new PMatrix3D();
+		float confidence = kinect.getJointOrientationSkeleton(userId, jointType, orientation);
+		if (confidence < 0.001f)
+			// nothing to draw, orientation data is useless
+			return;
 
-        // set the local coordsys
-        applyMatrix(orientation);
+		pushMatrix();
+		translate(pos.x, pos.y, pos.z);
 
-        // coordsys lines are 100mm long
-        // x - r
-        stroke(255, 0, 0, confidence * 200 + 55);
-        line(0, 0, 0, length, 0, 0);
-        // y - g
-        stroke(0, 255, 0, confidence * 200 + 55);
-        line(0, 0, 0, 0, length, 0);
-        // z - b
-        stroke(0, 0, 255, confidence * 200 + 55);
-        line(0, 0, 0, 0, 0, length);
-        popMatrix();
-    }
-    
-    public void getBodyDirection(int userId, PVector centerPoint, PVector dir) {
-        PVector jointL = new PVector();
-        PVector jointH = new PVector();
-        PVector jointR = new PVector();
-        float confidence;
+		// set the local coordsys
+		applyMatrix(orientation);
 
-        // draw the joint position
-        confidence = kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_LEFT_SHOULDER, jointL);
-        confidence = kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_HEAD, jointH);
-        confidence = kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_RIGHT_SHOULDER, jointR);
+		// coordsys lines are 100mm long
+		// x - r
+		stroke(255, 0, 0, confidence * 200 + 55);
+		line(0, 0, 0, length, 0, 0);
+		// y - g
+		stroke(0, 255, 0, confidence * 200 + 55);
+		line(0, 0, 0, 0, length, 0);
+		// z - b
+		stroke(0, 0, 255, confidence * 200 + 55);
+		line(0, 0, 0, 0, 0, length);
+		popMatrix();
+	}
 
-        // take the neck as the center point
-        confidence = kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_NECK, centerPoint);
+	public void getBodyDirection(int userId, PVector centerPoint, PVector dir) {
+		PVector jointL = new PVector();
+		PVector jointH = new PVector();
+		PVector jointR = new PVector();
+		float confidence;
 
-        /*
-         * // manually calc the centerPoint PVector shoulderDist =
-         * PVector.sub(jointL,jointR);
-         * centerPoint.set(PVector.mult(shoulderDist,.5));
-         * centerPoint.add(jointR);
-         */
+		// draw the joint position
+		confidence = kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_LEFT_SHOULDER, jointL);
+		confidence = kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_HEAD, jointH);
+		confidence = kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_RIGHT_SHOULDER, jointR);
 
-        PVector up = PVector.sub(jointH, centerPoint);
-        PVector left = PVector.sub(jointR, centerPoint);
+		// take the neck as the center point
+		confidence = kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_NECK, centerPoint);
 
-        dir.set(up.cross(left));
-        dir.normalize();
-    }
-	
+		/*
+		 * // manually calc the centerPoint PVector shoulderDist =
+		 * PVector.sub(jointL,jointR);
+		 * centerPoint.set(PVector.mult(shoulderDist,.5));
+		 * centerPoint.add(jointR);
+		 */
+
+		PVector up = PVector.sub(jointH, centerPoint);
+		PVector left = PVector.sub(jointR, centerPoint);
+
+		dir.set(up.cross(left));
+		dir.normalize();
+	}
+
 	void spiral(float segments, float N_voltas, int raio_max) {
 		int t, raio;
 		float cx, cy, px0 = 0, py0 = 0, px1 = 0, py1 = 0;
@@ -431,24 +544,24 @@ public class Visualization_02_mouse_follow extends PApplet {
 
 		super.stop();
 	}
-	
-    // -----------------------------------------------------------------
-    // SimpleOpenNI user events
 
-    public void onNewUser(SimpleOpenNI curContext, int userId) {
-        println("onNewUser - userId: " + userId);
-        println("\tstart tracking skeleton");
+	// -----------------------------------------------------------------
+	// SimpleOpenNI user events
 
-        kinect.startTrackingSkeleton(userId);
-    }
+	public void onNewUser(SimpleOpenNI curContext, int userId) {
+		println("onNewUser - userId: " + userId);
+		println("\tstart tracking skeleton");
 
-    public void onLostUser(SimpleOpenNI curContext, int userId) {
-        println("onLostUser - userId: " + userId);
-    }
+		kinect.startTrackingSkeleton(userId);
+	}
 
-    public void onVisibleUser(SimpleOpenNI curContext, int userId) {
-        // println("onVisibleUser - userId: " + userId);
-    }
+	public void onLostUser(SimpleOpenNI curContext, int userId) {
+		println("onLostUser - userId: " + userId);
+	}
+
+	public void onVisibleUser(SimpleOpenNI curContext, int userId) {
+		println("onVisibleUser - userId: " + userId);
+	}
 	
 
 	public void keyPressed() {
