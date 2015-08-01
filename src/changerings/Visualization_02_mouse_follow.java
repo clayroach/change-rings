@@ -147,6 +147,7 @@ public class Visualization_02_mouse_follow extends PApplet {
 			break;
 		case 2: 
 			drawMusic2();
+			break;
 		}
 
 		hint(ENABLE_DEPTH_TEST); // restore Z (depth) axis
@@ -294,10 +295,6 @@ public class Visualization_02_mouse_follow extends PApplet {
 			// get first user
 			PVector handPos = new PVector();
 			kinect.getJointPositionSkeleton(userList[0], SimpleOpenNI.SKEL_LEFT_HAND, handPos);
-			PVector convertedHandPos = new PVector();
-			kinect.convertRealWorldToProjective(handPos, convertedHandPos);
-
-			kinect.getCoM(userList[0], com);
 
 			pushMatrix();
 			
