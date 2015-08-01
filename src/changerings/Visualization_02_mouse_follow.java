@@ -44,7 +44,7 @@ public class Visualization_02_mouse_follow extends PApplet {
 
 	// Kinect and variables
 	SimpleOpenNI kinect;
-	boolean usersSensed = false;
+	boolean user1Sensed = false;
 	
 	float zoomF = 0.85f; // how big the skeleton appears in the frame
 	float rotX = radians(180); // by default rotate the hole scene 180deg around
@@ -147,11 +147,11 @@ public class Visualization_02_mouse_follow extends PApplet {
 
 			kinect.update();
 			
-			/*// This doesn't work yet.
-			if(getUsersSensed()) {
+			if(user1Sensed && START_MUSIC_ON_PERSON) {
 				song.loop();
+				user1Sensed = false;
 			}
-			 */
+
 			int[] userList = kinect.getUsers();
 
 			position3dAndScale();
@@ -199,20 +199,6 @@ public class Visualization_02_mouse_follow extends PApplet {
 		return true;
 	}
 	
-	/**
-	 * If users sensed at some point then set to true.
-	 * @return
-	 */
-	boolean getUsersSensed() {
-		if(usersSensed) {
-			return usersSensed;
-		}
-		if(kinect!=null && kinect.getUsers().length > 0) {
-			usersSensed = true;
-		}
-		return false;
-	}
-
 	float getJointAngle(int userId, int jointID1, int jointID2) {
 		PVector joint1 = new PVector();
 		PVector joint2 = new PVector();
@@ -568,10 +554,17 @@ public class Visualization_02_mouse_follow extends PApplet {
 		println("\tstart tracking skeleton");
 
 		kinect.startTrackingSkeleton(userId);
+		if(userId == 1) {
+			user1Sensed = true;
+		}
 	}
 
 	public void onLostUser(SimpleOpenNI curContext, int userId) {
 		println("onLostUser - userId: " + userId);
+		
+		if(userId == 1) {
+			user1Sensed = false;
+		}
 	}
 
 	public void onVisibleUser(SimpleOpenNI curContext, int userId) {
