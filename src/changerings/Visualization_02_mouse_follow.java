@@ -25,6 +25,12 @@ import ddf.minim.analysis.FFT;
 // Sounds processing
 
 public class Visualization_02_mouse_follow extends PApplet {
+	boolean SHOW_MOUSE_COORDINATES = false;
+	boolean SHOW_DEPTH_FIELD = false;
+	boolean SHOW_SKELETONS = true;
+	
+	//Start music when person comes into view, otherwise on mouse click
+	boolean START_MUSIC_ON_PERSON = true;
 
 	Minim minim;
 	AudioPlayer song;
@@ -38,6 +44,8 @@ public class Visualization_02_mouse_follow extends PApplet {
 
 	// Kinect and variables
 	SimpleOpenNI kinect;
+	boolean usersSensed = false;
+	
 	float zoomF = 0.85f; // how big the skeleton appears in the frame
 	float rotX = radians(180); // by default rotate the hole scene 180deg around
 								// the x-axis,
@@ -52,9 +60,6 @@ public class Visualization_02_mouse_follow extends PApplet {
 	int[] userClr = new int[] { color(255, 0, 0), color(0, 255, 0), color(0, 0, 255), color(255, 255, 0),
 			color(255, 0, 255), color(0, 255, 255) };
 
-	// Hand image
-	PImage handImage;
-
 	// Robot class used to move mouse around
 	Robot robot = null;
 
@@ -68,7 +73,6 @@ public class Visualization_02_mouse_follow extends PApplet {
 	public void setup() {
 		// strokeWeight(0);
 		size(displayWidth, displayHeight, P3D);
-		//size(900, 900, P3D);
 
 		try {
 			robot = new Robot();
@@ -77,21 +81,11 @@ public class Visualization_02_mouse_follow extends PApplet {
 			e.printStackTrace();
 		}
 
-		// size(900, 900, P2D); //(700, 800, P2D);
 		boolean kinectAttached = setupKinect(this);
 
 		minim = new Minim(this);
 
 		loadAudioFile();
-
-		handImage = loadImage("Hand.png");
-		if (handImage == null) {
-			println("unable to load image");
-		}
-
-		/*
-		 * if (mousePressed) { song.loop(); }
-		 */
 
 		// colorMode(HSB); THIS COLOR MODE DRIVES ME CRAZY -- I SHOULD LEARN
 		// THIS....
@@ -128,6 +122,54 @@ public class Visualization_02_mouse_follow extends PApplet {
 		// song = minim.loadFile("5080lo10a.mp3", 2048); // MY FAVORITE
 		// song = minim.loadFile("5080lo10a_slow.mp3", 2048);
 	}
+	
+	// //////////////////////////////////////////////////////DRAW LOOP
+	// /////////////////// // END DRAW LOOP
+
+	public void draw() {
+		background(0, 0, 0);
+		
+		// MUSIC DOENS'T START UNTIL MOUSE PRESS
+		if (mousePressed) {
+			song.loop();
+		}
+
+		pushMatrix(); // save off 3d frame of reference before painting 2d
+		hint(DISABLE_DEPTH_TEST); // switch off Z (depth) axis
+
+		drawMusic();
+
+		hint(ENABLE_DEPTH_TEST); // restore Z (depth) axis
+		popMatrix(); // restore 3d frame of reference
+
+		// update the cam
+		if (kinect != null) {
+
+			kinect.update();
+			
+			/*// This doesn't work yet.
+			if(getUsersSensed()) {
+				song.loop();
+			}
+			 */
+			int[] userList = kinect.getUsers();
+
+			position3dAndScale();
+
+			if(SHOW_DEPTH_FIELD) {
+				drawPointCloud();
+			}
+
+			if(SHOW_SKELETONS) {
+				drawSkeletons(userList);
+			}
+			
+			moveMouse(userList);
+
+		}
+
+	}
+	
 
 	/**
 	 * Set up the Kinect and ensure connectivity
@@ -154,44 +196,22 @@ public class Visualization_02_mouse_follow extends PApplet {
 		// enable skeleton generation for all joints
 		kinect.enableUser();
 
-//		kinect.enableRGB();
-
 		return true;
 	}
-
-	// //////////////////////////////////////////////////////DRAW LOOP
-	// /////////////////// // END DRAW LOOP
-
-	public void draw() {
-		background(0, 0, 0);
-
-		pushMatrix(); // save off 3d frame of reference before painting 2d
-		hint(DISABLE_DEPTH_TEST); // switch off Z (depth) axis
-
-		drawMusic();
-
-		hint(ENABLE_DEPTH_TEST); // restore Z (depth) axis
-		popMatrix(); // restore 3d frame of reference
-
-		// update the cam
-		if (kinect != null) {
-			
-			kinect.update();
-			
-			int[] userList = kinect.getUsers();
-
-			position3dAndScale();
-			
-			drawPointCloud();
-
-			drawSkeletons(userList);
-			
-			moveMouse(userList);
-			
-		}
-
-	}
 	
+	/**
+	 * If users sensed at some point then set to true.
+	 * @return
+	 */
+	boolean getUsersSensed() {
+		if(usersSensed) {
+			return usersSensed;
+		}
+		if(kinect!=null && kinect.getUsers().length > 0) {
+			usersSensed = true;
+		}
+		return false;
+	}
 
 	float getJointAngle(int userId, int jointID1, int jointID2) {
 		PVector joint1 = new PVector();
@@ -211,31 +231,28 @@ public class Visualization_02_mouse_follow extends PApplet {
 		translate(0, 0, -1000); // set the rotation center of the scene 1000
 								// infront of the camera
 	}
-	
-	void drawPointCloud() {
-		  // draw the 3d point depth map
-		  int[]   depthMap = kinect.depthMap();
-		  int     steps   = 10;  // to speed up the drawing, draw every third point
-		  int     index;
-		  PVector realWorldPoint;
 
-		  // draw point cloud
-		  stroke(200); 
-		  beginShape(POINTS);
-		  for(int y=0;y < kinect.depthHeight();y+=steps)
-		  {
-		    for(int x=0;x < kinect.depthWidth();x+=steps)
-		    {
-		      index = x + y * kinect.depthWidth();
-		      if(depthMap[index] > 0)
-		      { 
-		        // draw the projected point
-		        realWorldPoint = kinect.depthMapRealWorld()[index];
-		        vertex(realWorldPoint.x,realWorldPoint.y,realWorldPoint.z); 
-		      }
-		    } 
-		  } 
-		  endShape();
+	void drawPointCloud() {
+		// draw the 3d point depth map
+		int[] depthMap = kinect.depthMap();
+		int steps = 10; // to speed up the drawing, draw every third point
+		int index;
+		PVector realWorldPoint;
+
+		// draw point cloud
+		stroke(200);
+		beginShape(POINTS);
+		for (int y = 0; y < kinect.depthHeight(); y += steps) {
+			for (int x = 0; x < kinect.depthWidth(); x += steps) {
+				index = x + y * kinect.depthWidth();
+				if (depthMap[index] > 0) {
+					// draw the projected point
+					realWorldPoint = kinect.depthMapRealWorld()[index];
+					vertex(realWorldPoint.x, realWorldPoint.y, realWorldPoint.z);
+				}
+			}
+		}
+		endShape();
 
 	}
 
@@ -263,45 +280,48 @@ public class Visualization_02_mouse_follow extends PApplet {
 
 				fill(0, 255, 100);
 				text(Integer.toString(userList[i]), com.x, com.y, com.z);
-								
+
 			}
 		}
 	}
 
 	void moveMouse(int[] userList) {
-//		PVector jointPosition = new PVector();
-//		float confidence = 0;
-		
-		if(robot == null) {
+		// PVector jointPosition = new PVector();
+		// float confidence = 0;
+
+		if (robot == null) {
 			println("Robot class not initialized.  Unable to move mouse");
 			return;
 		}
 
 		if (userList.length > 0) {
 			// get first user
-		    PVector handPos = new PVector();
-		    kinect.getJointPositionSkeleton(userList[0], SimpleOpenNI.SKEL_LEFT_HAND, handPos);
-		    PVector convertedHandPos = new PVector();
-		    kinect.convertRealWorldToProjective(handPos, convertedHandPos);
-		    
-//		    println("x: " + handPos.x + " y: " + handPos.y);
-		    
-		    kinect.getCoM(userList[0], com);
-		    // doesn't work yet.
-//		    robot.mouseMove(Math.round(handPos.x), Math.round(handPos.y));
-			pushMatrix();
-			translate(handPos.x, handPos.y, handPos.z);
-//			translate(convertedHandPos.x, convertedHandPos.y, 1000);
-			rotateX(rotX);
-//			translate(convertedHandPos.x,convertedHandPos.y,convertedHandPos.z);
-		    fill(255,255,0);
-			ellipse(0, 0, 50, 50);
+			PVector handPos = new PVector();
+			kinect.getJointPositionSkeleton(userList[0], SimpleOpenNI.SKEL_LEFT_HAND, handPos);
+			PVector convertedHandPos = new PVector();
+			kinect.convertRealWorldToProjective(handPos, convertedHandPos);
 
+			kinect.getCoM(userList[0], com);
+
+			pushMatrix();
 			
-			fill(153);
-			textSize(32);
-//			text("X: " + handPos.x + "Y: " + handPos.y + "Z: " + handPos.z,0,0,0);
-			
+			if (SHOW_MOUSE_COORDINATES) {
+				translate(handPos.x, handPos.y, handPos.z);
+				rotateX(rotX);
+				fill(255, 255, 0);
+				ellipse(0, 0, 50, 50);
+
+				// Show X & Y current coordinates
+				fill(255, 0, 0);
+				textSize(64);
+				text("MOUSE X: " + mouseX + "  Y: " + mouseY, 0, 0, 0);
+
+				fill(0, 255, 0);
+				text("MOUSE TO HAND: X: " + (width / 2 - Math.round(handPos.x)) + "  Y: "
+						+ (height / 2 - Math.round(handPos.y)), 0, 100, 0);
+			}
+			robot.mouseMove((width / 2 - Math.round(handPos.x)), (height / 2 - Math.round(handPos.y)));
+
 			popMatrix();
 
 		}
@@ -315,11 +335,6 @@ public class Visualization_02_mouse_follow extends PApplet {
 		fill(0, 20); // 10);
 		rectMode(CORNER);
 		rect(0, 0, width, height);
-
-		// MUSIC DOENS'T START UNTIL MOUSE PRESS
-		if (mousePressed) {
-			song.loop();
-		}
 
 		c1 = color(random(255), random(129), random(247));
 		// .......................................................................................
@@ -560,9 +575,8 @@ public class Visualization_02_mouse_follow extends PApplet {
 	}
 
 	public void onVisibleUser(SimpleOpenNI curContext, int userId) {
-		println("onVisibleUser - userId: " + userId);
+		// println("onVisibleUser - userId: " + userId);
 	}
-	
 
 	public void keyPressed() {
 		exit();
